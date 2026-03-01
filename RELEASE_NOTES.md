@@ -1,4 +1,4 @@
-# Release v20260301
+# Release v2026.03.01
 
 ## 🚀 新特性
 
@@ -77,8 +77,8 @@ upx --best --lzma build/aliddns-linux-amd64/aliddns
 
 | 标签 | Target | 预估大小 | 说明 |
 |------|--------|---------|------|
-| `latest`, `v20260301` | upx | ~13MB | UPX压缩版（推荐生产使用） |
-| `alpine`, `v20260301-alpine` | alpine | ~55MB | Alpine基础版（带shell） |
+| `latest`, `v2026.03.01` | upx | ~13MB | UPX压缩版（推荐生产使用） |
+| `alpine`, `v2026.03.01-alpine` | alpine | ~55MB | Alpine基础版（带shell） |
 
 ---
 
@@ -126,4 +126,4 @@ upx --best --lzma aliddns
 
 ---
 
-**Full Changelog**: https://github.com/zhangsean/aliddns/commits/v20260301
+**Full Changelog**: https://github.com/zhangsean/aliddns/compare/v2026.03.01
