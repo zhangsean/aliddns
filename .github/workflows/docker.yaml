@@ -1,0 +1,73 @@
+name: Docker
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  build_docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v4
+
+      - name: Set env
+        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push aliddns (UPX压缩版)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.minimal
+          target: upx
+          platforms: linux/amd64,linux/arm/v7,linux/arm64
+          push: true
+          build-args: |
+            VERSION=${{ env.RELEASE_VERSION }}
+            ENABLE_UPX=true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/aliddns:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/aliddns:${{ env.RELEASE_VERSION }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Build and push aliddns (Alpine版)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.minimal
+          target: alpine
+          platforms: linux/amd64,linux/arm/v7,linux/arm64
+          push: true
+          build-args: |
+            VERSION=${{ env.RELEASE_VERSION }}
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/aliddns:alpine
+            ${{ secrets.DOCKERHUB_USERNAME }}/aliddns:${{ env.RELEASE_VERSION }}-alpine
+          cache-from: type=local,src=/tmp/.buildx-cache
