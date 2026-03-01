@@ -3,6 +3,8 @@ BASE_BUILDDIR=build
 BUILDNAME=$(GOOS)-$(GOARCH)$(GOAMD64)$(GOARM)
 BUILDDIR=$(BASE_BUILDDIR)/$(BUILDNAME)
 VERSION?=dev
+UPX?=upx
+ENABLE_UPX?=false
 
 ifeq ($(GOOS),windows)
   ext=.exe
@@ -23,6 +25,11 @@ release: check-env-release
 	cp LICENSE $(BUILDDIR)/
 	cp README.md $(BUILDDIR)/
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -mod=vendor -ldflags "-s -w -X main.VersionString=$(VERSION)" -o $(BUILDDIR)/$(NAME)$(ext)
+	if [ "$(ENABLE_UPX)" = "true" ] && [ -x "$(UPX)" ] && [ "$(GOOS)" != "darwin" ]; then \
+		echo "UPX压缩前:" && ls -lh $(BUILDDIR)/$(NAME)$(ext) ; \
+		$(UPX) --best --lzma $(BUILDDIR)/$(NAME)$(ext) ; \
+		echo "UPX压缩后:" && ls -lh $(BUILDDIR)/$(NAME)$(ext) ; \
+	fi
 	cd $(BASE_BUILDDIR) ; $(archiveCmd)
 
 test:
