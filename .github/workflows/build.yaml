@@ -1,12 +1,15 @@
 name: Build
 
-"on":
-  "push":
-    "tags":
+on:
+  push:
+    tags:
       - "v*"
-    "branches":
+    branches:
       - "*"
-  "pull_request":
+  pull_request:
+    branches:
+      - "*"
+  workflow_dispatch:
 
 jobs:
   build:
@@ -14,11 +17,16 @@ jobs:
     env:
       GO111MODULE: "on"
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - uses: actions/setup-go@v3
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.24.4'
+          cache: true
 
       - name: Prepare environment
         run: |-
@@ -30,67 +38,93 @@ jobs:
       - name: Install UPX
         run: |-
           UPX_VERSION=4.2.4
-          curl -L -o upx.tar.xz "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz"
+          curl -fsSL -o upx.tar.xz "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz"
           tar -xf upx.tar.xz
-          sudo cp upx-${UPX_VERSION}-amd64_linux/upx /usr/local/bin/
+          sudo cp upx-${UPX_VERSION}-amd64_linux/upx /usr/local/bin/upx
+          rm -rf upx-${UPX_VERSION}-amd64_linux upx.tar.xz
           upx --version
 
-      # Test
       - name: Unit Testing
-        run: go test -v .
+        run: go test -v -race -bench=. ./...
 
-      # Win
-      - run: GOOS=windows GOARCH=386 VERSION=${RELEASE_VERSION} make release
-      - run: GOOS=windows GOARCH=amd64 VERSION=${RELEASE_VERSION} make release
-      - run: GOOS=windows GOARCH=amd64 GOAMD64=v3 VERSION=${RELEASE_VERSION} make release
-      - run: GOOS=windows GOARCH=arm64 VERSION=${RELEASE_VERSION} make release
+      - name: Build Windows (386)
+        run: GOOS=windows GOARCH=386 VERSION=${RELEASE_VERSION} make release
 
-      # MacOS
-      - run: GOOS=darwin GOARCH=amd64 VERSION=${RELEASE_VERSION} make release
-      - run: GOOS=darwin GOARCH=arm64 VERSION=${RELEASE_VERSION} make release
+      - name: Build Windows (amd64)
+        run: GOOS=windows GOARCH=amd64 VERSION=${RELEASE_VERSION} make release
 
-      # Linux X86/AMD64 (带UPX压缩)
-      - run: GOOS=linux GOARCH=386 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
-      - run: GOOS=linux GOARCH=amd64 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
-      - run: GOOS=linux GOARCH=amd64 GOAMD64=v3 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+      - name: Build Windows (amd64 v3)
+        run: GOOS=windows GOARCH=amd64 GOAMD64=v3 VERSION=${RELEASE_VERSION} make release
 
-      # Linux ARM (带UPX压缩)
-      - run: GOOS=linux GOARCH=arm GOARM=5 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
-      - run: GOOS=linux GOARCH=arm GOARM=6 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
-      - run: GOOS=linux GOARCH=arm64 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+      - name: Build Windows (arm64)
+        run: GOOS=windows GOARCH=arm64 VERSION=${RELEASE_VERSION} make release
 
-      # Linux MIPS/MIPSLE (带UPX压缩)
-      - run: GOOS=linux GOARCH=mips GOMIPS=softfloat VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
-      - run: GOOS=linux GOARCH=mipsle GOMIPS=softfloat VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+      - name: Build MacOS (amd64)
+        run: GOOS=darwin GOARCH=amd64 VERSION=${RELEASE_VERSION} make release
 
-      # FreeBSD X86 (带UPX压缩)
-      - run: GOOS=freebsd GOARCH=386 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
-      - run: GOOS=freebsd GOARCH=amd64 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+      - name: Build MacOS (arm64)
+        run: GOOS=darwin GOARCH=arm64 VERSION=${RELEASE_VERSION} make release
 
-      # FreeBSD ARM/ARM64 (带UPX压缩)
-      - run: GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
-      - run: GOOS=freebsd GOARCH=arm64 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+      - name: Build Linux (386) with UPX
+        run: GOOS=linux GOARCH=386 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
 
-      - run: ls -l build/aliddns-*
+      - name: Build Linux (amd64) with UPX
+        run: GOOS=linux GOARCH=amd64 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
 
-      - name: Create release
+      - name: Build Linux (amd64 v3) with UPX
+        run: GOOS=linux GOARCH=amd64 GOAMD64=v3 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+
+      - name: Build Linux (arm v5) with UPX
+        run: GOOS=linux GOARCH=arm GOARM=5 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+
+      - name: Build Linux (arm v6) with UPX
+        run: GOOS=linux GOARCH=arm GOARM=6 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+
+      - name: Build Linux (arm64) with UPX
+        run: GOOS=linux GOARCH=arm64 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+
+      - name: Build Linux (mips) with UPX
+        run: GOOS=linux GOARCH=mips GOMIPS=softfloat VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+
+      - name: Build Linux (mipsle) with UPX
+        run: GOOS=linux GOARCH=mipsle GOMIPS=softfloat VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+
+      - name: Build FreeBSD (386) with UPX
+        run: GOOS=freebsd GOARCH=386 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+
+      - name: Build FreeBSD (amd64) with UPX
+        run: GOOS=freebsd GOARCH=amd64 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+
+      - name: Build FreeBSD (arm v6) with UPX
+        run: GOOS=freebsd GOARCH=arm GOARM=6 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+
+      - name: Build FreeBSD (arm64) with UPX
+        run: GOOS=freebsd GOARCH=arm64 VERSION=${RELEASE_VERSION} ENABLE_UPX=true make release
+
+      - name: List build artifacts
+        run: ls -lh build/aliddns-*
+
+      - name: Read Release Notes
         if: startsWith(github.ref, 'refs/tags/v')
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: release_notes
+        run: |
+          if [ -f RELEASE_NOTES.md ]; then
+            echo "body<<EOF" >> $GITHUB_OUTPUT
+            cat RELEASE_NOTES.md >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "body=Release ${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release and Upload Assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          body: ${{ steps.release_notes.outputs.body }}
           draft: false
           prerelease: false
-
-      - name: Upload
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: xresloader/upload-to-github-release@v1
+          files: |
+            build/aliddns-*.tar.gz
+            build/aliddns-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          file: "build/aliddns-*.tar.gz;build/aliddns-*.zip"
-          tags: true
-          draft: false
