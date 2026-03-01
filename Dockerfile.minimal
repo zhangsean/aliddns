@@ -1,0 +1,100 @@
+# 最小化构建 - 使用多阶段构建生成可在Alpine/Scratch运行的二进制文件
+# 支持架构: amd64, arm64, arm/v7
+
+# ==================== 构建阶段 ====================
+FROM golang:1.24-alpine AS builder
+
+# 安装构建依赖和UPX
+RUN apk add --no-cache git ca-certificates tzdata curl
+
+# 安装UPX (多架构支持)
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+        amd64) UPX_ARCH=amd64 ;; \
+        arm64) UPX_ARCH=arm64 ;; \
+        arm) UPX_ARCH=arm ;; \
+        *) UPX_ARCH=amd64 ;; \
+    esac && \
+    curl -L -o /tmp/upx.tar.xz "https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-${UPX_ARCH}_linux.tar.xz" && \
+    tar -xf /tmp/upx.tar.xz -C /tmp && \
+    cp /tmp/upx-4.2.4-${UPX_ARCH}_linux/upx /usr/local/bin/upx && \
+    rm -rf /tmp/upx*
+
+WORKDIR /build
+
+# 复制依赖文件
+COPY go.mod go.mod
+COPY go.sum go.sum
+
+# 下载依赖
+RUN go mod download
+
+# 复制源码
+COPY . .
+
+# 构建静态链接的二进制文件
+# -s -w: 去除符号表和调试信息，减小体积
+# -extldflags "-static": 静态链接
+# CGO_ENABLED=0: 禁用CGO，确保纯静态链接
+ARG VERSION=dev
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v} \
+    go build -a -installsuffix cgo \
+    -ldflags "-s -w -extldflags '-static' -X main.VersionString=${VERSION}" \
+    -o aliddns .
+
+# UPX极限压缩 (可选，通过build-arg控制)
+ARG ENABLE_UPX=true
+RUN if [ "$ENABLE_UPX" = "true" ]; then \
+        echo "UPX压缩前:" && ls -lh aliddns && \
+        upx --best --lzma aliddns && \
+        echo "UPX压缩后:" && ls -lh aliddns ; \
+    else \
+        echo "跳过UPX压缩"; \
+    fi
+
+# ==================== 最终镜像 - Alpine (带shell) ====================
+FROM alpine:3.20 AS alpine
+
+# 安装基础工具
+RUN apk add --no-cache ca-certificates tzdata
+
+# 复制二进制文件
+COPY --from=builder /build/aliddns /usr/bin/aliddns
+RUN ln -sf /usr/bin/aliddns /usr/bin/aliyun-ddns-cli
+
+ENV AKID=1234567890 \
+    AKSCT=abcdefghijklmn \
+    DOMAIN=ddns.example.win \
+    IPAPI=[IPAPI-GROUP] \
+    REDO=555r \
+    TTL=600
+
+ENTRYPOINT ["/usr/bin/aliddns"]
+CMD ["--ipapi", "${IPAPI}", "auto-update", "--domain", "${DOMAIN}", "--redo", "${REDO}", "--ttl", "${TTL}"]
+
+# ==================== 最终镜像 - UPX极限压缩版 ====================
+FROM scratch AS upx
+
+# 从builder复制证书和时区数据
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+
+# 复制UPX压缩后的二进制文件
+COPY --from=builder /build/aliddns /usr/bin/aliddns
+
+# 创建非root用户
+USER 65534:65534
+
+ENV AKID=1234567890 \
+    AKSCT=abcdefghijklmn \
+    DOMAIN=ddns.example.win \
+    IPAPI=[IPAPI-GROUP] \
+    REDO=555r \
+    TTL=600
+
+ENTRYPOINT ["/usr/bin/aliddns"]
+CMD ["--ipapi", "${IPAPI}", "auto-update", "--domain", "${DOMAIN}", "--redo", "${REDO}", "--ttl", "${TTL}"]
